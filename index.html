@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>할 일</title>
+<style>
+/* ===== [0] 디자인 토큰 ===== */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --border: #dfe3e8;
+  --text: #1c2024;
+  --text-dim: #6b7280;
+  --text-faint: #9aa1ab;
+  --accent: #2f6feb;
+  --accent-soft: #e8f0fe;
+  --danger: #c0392b;
+  --warn-bg: #fff6e0;
+  --warn-border: #e8c97a;
+  --error-bg: #fdecea;
+  --error-border: #e2a09a;
+  --cat-work: #2f6feb;
+  --cat-work-bg: #e8f0fe;
+  --cat-personal: #0f8a6a;
+  --cat-personal-bg: #e3f6ef;
+  --cat-study: #9333c4;
+  --cat-study-bg: #f3e8fb;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --radius: 8px;
+  --radius-sm: 5px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "맑은 고딕", sans-serif;
+}
+
+/* ===== [1] 레이아웃 ===== */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: var(--sp-4);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.app {
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+h1 {
+  margin: 0 0 var(--sp-4);
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-4);
+  margin-bottom: var(--sp-3);
+}
+
+/* ===== [2] 컴포넌트 ===== */
+
+/* 배너 */
+.banners:empty { display: none; }
+.banner {
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  margin-bottom: var(--sp-3);
+  font-size: 14px;
+}
+.banner--warn  { background: var(--warn-bg);  border-color: var(--warn-border); }
+.banner--error { background: var(--error-bg); border-color: var(--error-border); }
+
+/* 입력 */
+.add { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.add input[type="text"] {
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+.add input[type="text"]:focus-visible,
+.add select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.add select, .add button {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  background: var(--surface);
+}
+.add button {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+/* 입력 거부 시 흔들림 */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+.shake { animation: shake 0.3s ease; }
+
+/* 진행률 */
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.progress-row--total { font-weight: 600; }
+.progress-row--total .progress-label { font-size: 15px; }
+.progress-label {
+  flex: 0 0 auto;
+  min-width: 34px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.bar {
+  flex: 1 1 auto;
+  height: 10px;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.progress-cats .bar { height: 6px; }
+.bar-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  border-radius: 99px;
+  transition: width 0.18s ease;
+}
+.progress-value {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.progress-row--total .progress-value { font-size: 14px; color: var(--text); }
+.progress-cats {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: var(--sp-2);
+}
+.progress-cats [data-category="업무"] .bar-fill { background: var(--cat-work); }
+.progress-cats [data-category="개인"] .bar-fill { background: var(--cat-personal); }
+.progress-cats [data-category="공부"] .bar-fill { background: var(--cat-study); }
+
+/* 필터 */
+.filters {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.filter-group { display: flex; gap: var(--sp-1); }
+.filter-btn {
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--surface);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.filter-btn[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.filters select {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 14px;
+  background: var(--surface);
+}
+
+/* 목록 */
+.list { list-style: none; margin: 0; padding: 0; }
+.list:empty { display: none; }
+
+.empty {
+  margin: 0;
+  padding: var(--sp-5) var(--sp-4);
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 14px;
+}
+
+/* 카테고리 배지 — 색만으로 구분하지 않고 항상 글자를 함께 보여준다 */
+.badge {
+  flex: 0 0 auto;
+  padding: 1px var(--sp-2);
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.badge[data-category="업무"] { color: var(--cat-work);     background: var(--cat-work-bg); }
+.badge[data-category="개인"] { color: var(--cat-personal); background: var(--cat-personal-bg); }
+.badge[data-category="공부"] { color: var(--cat-study);    background: var(--cat-study-bg); }
+
+/* 토스트 */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--sp-4);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  background: var(--text);
+  color: #fff;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: 99px;
+  font-size: 14px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  max-width: calc(100vw - 2 * var(--sp-4));
+}
+.toast[hidden] { display: none; }
+.toast button {
+  background: none;
+  border: none;
+  color: #8fb6ff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* 좁은 화면 */
+@media (max-width: 420px) {
+  body { padding: var(--sp-3); }
+  .progress-row--total .progress-label { min-width: 28px; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <h1>할 일</h1>
+
+  <div class="banners" id="banners" role="status" aria-live="polite"></div>
+
+  <form class="panel add" id="add-form" autocomplete="off">
+    <input type="text" id="add-input" placeholder="할 일 입력..." aria-label="할 일 제목">
+    <select id="add-category" aria-label="카테고리">
+      <option value="업무">업무</option>
+      <option value="개인">개인</option>
+      <option value="공부">공부</option>
+    </select>
+    <button type="submit">추가</button>
+  </form>
+
+  <section class="panel" aria-label="진행률">
+    <div class="progress-row progress-row--total">
+      <span class="progress-label">전체</span>
+      <div class="bar"><div class="bar-fill" id="bar-total"></div></div>
+      <span class="progress-value" id="value-total">0/0 0%</span>
+    </div>
+    <div class="progress-cats" id="progress-cats">
+      <div class="progress-row" data-category="업무">
+        <span class="progress-label">업무</span>
+        <div class="bar"><div class="bar-fill"></div></div>
+        <span class="progress-value">0/0</span>
+      </div>
+      <div class="progress-row" data-category="개인">
+        <span class="progress-label">개인</span>
+        <div class="bar"><div class="bar-fill"></div></div>
+        <span class="progress-value">0/0</span>
+      </div>
+      <div class="progress-row" data-category="공부">
+        <span class="progress-label">공부</span>
+        <div class="bar"><div class="bar-fill"></div></div>
+        <span class="progress-value">0/0</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel filters" aria-label="필터">
+    <div class="filter-group" id="filter-status">
+      <button type="button" class="filter-btn" data-status="all" aria-pressed="false">전체</button>
+      <button type="button" class="filter-btn" data-status="active" aria-pressed="true">진행중</button>
+      <button type="button" class="filter-btn" data-status="done" aria-pressed="false">완료</button>
+    </div>
+    <select id="filter-category" aria-label="카테고리 필터">
+      <option value="all">전체 카테고리</option>
+      <option value="업무">업무</option>
+      <option value="개인">개인</option>
+      <option value="공부">공부</option>
+    </select>
+  </section>
+
+  <ul class="list" id="todo-list"></ul>
+  <p class="empty" id="empty">첫 할 일을 추가해보세요</p>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ===================== [1] STATE ===================== */
+
+  let todos = [];
+  let filter = { status: 'active', category: 'all' };
+  let lastDeleted = null;
+  let storageMode = 'persistent';
+
+  /* ===================== [2] STORAGE ===================== */
+  /* DOM 을 참조하지 않는다. 이 경계가 "계산이 틀렸는지 표시가 틀렸는지"를
+     구분하는 유일한 수단이다. */
+
+  const STORAGE_KEY = 'todo-app-v1';
+  const CORRUPT_KEY = 'todo-app-v1.corrupt';
+  const SCHEMA_VERSION = 1;
+  const CATEGORIES = ['업무', '개인', '공부'];
+
+  // 가용성 probe 는 getItem 으로 한다. setItem 으로 하면 용량 초과(quota)가
+  // 차단(blocked)으로 잘못 분류된다.
+  function storageArea() {
+    try {
+      const ls = (typeof window !== 'undefined') ? window.localStorage : null;
+      if (!ls) return null;
+      ls.getItem('__todo_probe__');
+      return ls;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function isValidTodo(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    if (typeof value.id !== 'string' || value.id.length === 0) return false;
+    if (typeof value.title !== 'string' || value.title.trim().length === 0) return false;
+    if (CATEGORIES.indexOf(value.category) === -1) return false;
+    if (typeof value.done !== 'boolean') return false;
+    if (typeof value.createdAt !== 'number' || !isFinite(value.createdAt)) return false;
+    return true;
+  }
+
+  function loadState() {
+    const area = storageArea();
+    if (!area) return { todos: [], mode: 'memory', error: 'blocked' };
+
+    const raw = area.getItem(STORAGE_KEY);
+    if (raw === null) return { todos: [], mode: 'persistent', error: null };
+
+    // 손상된 데이터는 조용히 버리지 않는다. 원본을 .corrupt 로 옮겨 보존한다.
+    function corrupt() {
+      try {
+        area.setItem(CORRUPT_KEY, raw);
+        area.removeItem(STORAGE_KEY);
+      } catch (e) { /* 보존에 실패해도 빈 상태로는 시작한다 */ }
+      return { todos: [], mode: 'persistent', error: 'corrupt' };
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      return corrupt();
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return corrupt();
+    if (!Array.isArray(parsed.todos)) return corrupt();
+    for (let i = 0; i < parsed.todos.length; i++) {
+      if (!isValidTodo(parsed.todos[i])) return corrupt();
+    }
+
+    return { todos: parsed.todos, mode: 'persistent', error: null };
+  }
+
+  function saveState(list, mode) {
+    const effective = (mode === undefined) ? storageMode : mode;
+    if (effective === 'memory') return { ok: true, error: null };
+
+    try {
+      const ls = (typeof window !== 'undefined') ? window.localStorage : null;
+      if (!ls) return { ok: false, error: 'blocked' };
+      ls.setItem(STORAGE_KEY, JSON.stringify({ version: SCHEMA_VERSION, todos: list }));
+      return { ok: true, error: null };
+    } catch (e) {
+      const quota = e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+      return { ok: false, error: quota ? 'quota' : 'blocked' };
+    }
+  }
+
+  /* ===================== [3] LOGIC ===================== */
+  /* 2단계에서 채운다. DOM 을 참조하지 않는 순수 함수만 둔다. */
+
+  /* ===================== [4] RENDER ===================== */
+  /* 3단계에서 채운다. */
+
+  function showBanner(message, kind) {
+    const host = document.getElementById('banners');
+    if (!host) return;
+    const el = document.createElement('div');
+    el.className = 'banner banner--' + (kind === 'error' ? 'error' : 'warn');
+    el.textContent = message;
+    host.appendChild(el);
+  }
+
+  /* ===================== [5] EVENTS ===================== */
+  /* 4단계에서 채운다. */
+
+  /* ===================== [6] INIT ===================== */
+
+  function init() {
+    const state = loadState();
+    todos = state.todos;
+    storageMode = state.mode;
+
+    if (state.error === 'corrupt') {
+      showBanner('저장된 데이터를 읽을 수 없어 새로 시작합니다', 'error');
+    } else if (state.error === 'blocked') {
+      showBanner('이 창을 닫으면 데이터가 사라집니다', 'warn');
+    }
+
+    // 같은 앱을 두 탭에 열어두었을 때 한쪽 변경이 다른 쪽에 조용히
+    // 덮어써지지 않게 한다. PRD 에 없던 대응.
+    window.addEventListener('storage', function (event) {
+      if (event.key !== STORAGE_KEY) return;
+      const next = loadState();
+      todos = next.todos;
+      // 3단계부터 여기서 render() 를 부른다.
+    });
+  }
+
+  window.__app = {
+    STORAGE_KEY: STORAGE_KEY,
+    CORRUPT_KEY: CORRUPT_KEY,
+    SCHEMA_VERSION: SCHEMA_VERSION,
+    CATEGORIES: CATEGORIES,
+    isValidTodo: isValidTodo,
+    loadState: loadState,
+    saveState: saveState,
+    state: function () { return { todos: todos, filter: filter, lastDeleted: lastDeleted, storageMode: storageMode }; }
+  };
+
+  // 테스트는 document 없는 vm 컨텍스트에서 이 스크립트를 실행한다.
+  // 브라우저에서는 항상 참이다.
+  if (typeof document !== 'undefined') init();
+})();
+</script>
+
+</body>
+</html>
