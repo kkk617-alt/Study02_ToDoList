@@ -413,7 +413,115 @@ h1 {
   }
 
   /* ===================== [3] LOGIC ===================== */
-  /* 2단계에서 채운다. DOM 을 참조하지 않는 순수 함수만 둔다. */
+  /* 순수 함수만 둔다. DOM 을 참조하지 않고, 받은 배열과 그 안의 항목을
+     변경하지 않는다. 변경이 새 객체로만 일어나야 되돌리기와 원본 보존이
+     조용히 망가지지 않는다. */
+
+  let idCounter = 0;
+
+  function createTodo(title, category) {
+    const clean = String(title == null ? '' : title).trim();
+    if (clean.length === 0) return null;
+    if (CATEGORIES.indexOf(category) === -1) return null;
+
+    idCounter += 1;
+    const now = Date.now();
+    return {
+      // 같은 밀리초에 연속 호출해도 충돌하지 않도록 증가 카운터를 함께 쓴다.
+      id: now + '-' + idCounter.toString(36) + Math.random().toString(36).slice(2, 7),
+      title: clean,
+      category: category,
+      done: false,
+      createdAt: now
+    };
+  }
+
+  // id 가 맞는 항목만 새 객체로 갈아끼운 새 배열을 돌려준다.
+  // 대상이 없으면 받은 배열을 그대로 돌려준다 (호출부가 "변화 없음"을 알 수 있다).
+  function replaceById(list, id, change) {
+    let found = false;
+    const next = list.map(function (item) {
+      if (item.id !== id) return item;
+      found = true;
+      return change(item);
+    });
+    return found ? next : list;
+  }
+
+  function addTodo(list, title, category) {
+    const created = createTodo(title, category);
+    if (!created) return list;
+    return list.concat([created]);
+  }
+
+  function updateTitle(list, id, title) {
+    const clean = String(title == null ? '' : title).trim();
+    // 빈 제목은 취소로 처리한다. 삭제가 아니다 (PRD FR-2).
+    if (clean.length === 0) return list;
+    return replaceById(list, id, function (item) {
+      return Object.assign({}, item, { title: clean });
+    });
+  }
+
+  function updateCategory(list, id, category) {
+    if (CATEGORIES.indexOf(category) === -1) return list;
+    return replaceById(list, id, function (item) {
+      return Object.assign({}, item, { category: category });
+    });
+  }
+
+  function toggleDone(list, id) {
+    return replaceById(list, id, function (item) {
+      return Object.assign({}, item, { done: !item.done });
+    });
+  }
+
+  function removeTodo(list, id) {
+    const index = list.findIndex(function (item) { return item.id === id; });
+    if (index === -1) return { list: list, removed: null, index: -1 };
+
+    const next = list.slice();
+    const removed = next.splice(index, 1)[0];
+    return { list: next, removed: removed, index: index };
+  }
+
+  function restoreTodo(list, item, index) {
+    const next = list.slice();
+    if (typeof index !== 'number' || index < 0 || index > next.length) {
+      next.push(item);
+    } else {
+      next.splice(index, 0, item);
+    }
+    return next;
+  }
+
+  function filterTodos(list, current) {
+    return list.filter(function (item) {
+      if (current.status === 'active' && item.done) return false;
+      if (current.status === 'done' && !item.done) return false;
+      if (current.category !== 'all' && item.category !== current.category) return false;
+      return true;
+    });
+    // 정렬하지 않는다. 완료 항목이 눈앞에서 움직이면 체크하려던 대상을 놓친다.
+  }
+
+  function calcProgress(list, category) {
+    const scope = (category === undefined || category === 'all')
+      ? list
+      : list.filter(function (item) { return item.category === category; });
+
+    const total = scope.length;
+    let done = 0;
+    for (let i = 0; i < scope.length; i++) {
+      if (scope[i].done) done += 1;
+    }
+    // total 이 0 이면 나눗셈을 하지 않는다. NaN 이 화면에 나와서는 안 된다.
+    return {
+      done: done,
+      total: total,
+      percent: total === 0 ? 0 : Math.round((done / total) * 100)
+    };
+  }
 
   /* ===================== [4] RENDER ===================== */
   /* 3단계에서 채운다. */
@@ -461,6 +569,15 @@ h1 {
     isValidTodo: isValidTodo,
     loadState: loadState,
     saveState: saveState,
+    createTodo: createTodo,
+    addTodo: addTodo,
+    updateTitle: updateTitle,
+    updateCategory: updateCategory,
+    toggleDone: toggleDone,
+    removeTodo: removeTodo,
+    restoreTodo: restoreTodo,
+    filterTodos: filterTodos,
+    calcProgress: calcProgress,
     state: function () { return { todos: todos, filter: filter, lastDeleted: lastDeleted, storageMode: storageMode }; }
   };
 
