@@ -354,6 +354,10 @@ h1 {
 @media (max-width: 420px) {
   body { padding: var(--sp-3); }
   .progress-row--total .progress-label { min-width: 28px; }
+  /* 입력창이 한 줄을 다 쓰고, 카테고리와 추가 버튼이 둘째 줄을 나눠 갖는다. */
+  .add input[type="text"] { flex: 1 1 100%; }
+  .add select { flex: 1 1 auto; }
+  .add button { flex: 1 1 auto; }
 }
 </style>
 </head>
@@ -636,7 +640,12 @@ h1 {
   /* 상태를 읽어 화면 전부를 다시 그린다. 20개 규모에서 부분 갱신은 과설계다. */
 
   // 순수 함수. 필터 조합에 맞는 안내 문구를 만든다.
-  function emptyMessage(current) {
+  // totalCount 는 필터를 거치기 전 전체 개수다.
+  function emptyMessage(current, totalCount) {
+    // 할 일이 아예 없는 사람에게 "진행중인 할 일이 없습니다"는 아무것도
+    // 알려주지 못한다. 기본 필터가 '진행중'이라는 사정은 그 사람 몫이 아니다.
+    if (totalCount === 0) return '첫 할 일을 추가해보세요';
+
     const statusText = current.status === 'active' ? '진행중인'
       : current.status === 'done' ? '완료한'
       : '';
@@ -764,7 +773,7 @@ h1 {
     host.textContent = '';
 
     if (visible.length === 0) {
-      empty.textContent = emptyMessage(current);
+      empty.textContent = emptyMessage(current, list.length);
       empty.hidden = false;
       return;
     }
