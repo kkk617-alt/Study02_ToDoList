@@ -421,7 +421,8 @@ h1 {
   <p class="empty" id="empty">첫 할 일을 추가해보세요</p>
 </div>
 
-<div class="toast" id="toast" hidden></div>
+<!-- 삭제는 확인 창 없이 즉시 일어난다. 그 안내가 스크린리더에도 닿아야 한다. -->
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script>
 (function () {
@@ -431,7 +432,10 @@ h1 {
 
   let todos = [];
   let filter = { status: 'active', category: 'all' };
-  let lastDeleted = null;
+  // 삭제하면 다음 행이 같은 픽셀로 올라온다. 더블클릭이면 서로 다른 두 항목이
+  // 지워지므로, 되돌리기 슬롯이 하나면 먼저 지워진 쪽이 영구히 사라진다.
+  // 창이 열려 있는 동안의 삭제를 모두 들고 있다가 함께 되돌린다.
+  let pendingDeletes = [];
   let storageMode = 'persistent';
 
   // 인라인 편집 중인 항목. 전체 재그리기가 일어나도 입력 내용과 커서를
@@ -604,6 +608,16 @@ h1 {
       next.push(item);
     } else {
       next.splice(index, 0, item);
+    }
+    return next;
+  }
+
+  // 되돌리기 대기 중인 삭제를 전부 되돌린다.
+  // 나중에 지운 것부터 끼워 넣어야 각자 기록된 인덱스가 그대로 들어맞는다.
+  function restoreMany(list, pending) {
+    let next = list.slice();
+    for (let i = pending.length - 1; i >= 0; i--) {
+      next = restoreTodo(next, pending[i].todo, pending[i].index);
     }
     return next;
   }
@@ -844,7 +858,10 @@ h1 {
     renderList(todos, filter);
     renderFilters(filter);
 
-    if (editingId !== null) restoreEditFocus();
+    // 편집 입력이 실제로 화면에 있을 때만 그쪽을 복원한다. editingId 가 어떤
+    // 이유로 남아 있는데 입력이 없으면, 이 분기 때문에 포커스 복원이 통째로
+    // 건너뛰어져 키보드 조작이 세션 내내 망가진다.
+    if (editingId !== null && document.querySelector('.row-edit')) restoreEditFocus();
     else restoreFocus(savedFocus);
 
     rendering = false;
@@ -871,7 +888,9 @@ h1 {
     toast.textContent = '';
 
     const label = document.createElement('span');
-    label.textContent = '삭제됨';
+    label.textContent = pendingDeletes.length > 1
+      ? pendingDeletes.length + '개 삭제됨'
+      : '삭제됨';
 
     const button = document.createElement('button');
     button.type = 'button';
@@ -879,23 +898,40 @@ h1 {
     button.textContent = '되돌리기';
 
     toast.appendChild(label);
+    toast.appendChild(document.createTextNode(' · '));
     toast.appendChild(button);
     toast.hidden = false;
+
+    // 되돌리기는 확인 창을 없앤 대가로 둔 안전장치다(FR-4). 그런데 토스트는
+    // 문서 맨 끝이라 키보드로는 수십 번 Tab 해야 닿고, 삭제 직후 포커스가
+    // 다른 항목의 삭제 버튼에 놓이면 Enter 한 번에 연쇄 삭제가 난다.
+    // 포커스를 여기로 옮겨 안전장치를 실제로 손에 닿게 한다.
+    button.focus();
 
     // 이전 삭제의 타이머가 살아 있으면 끈다. 그러지 않으면 먼저 건 타이머가
     // 나중에 발동해 새 토스트를 지우고 되돌릴 기회를 빼앗는다.
     if (undoTimer !== null) clearTimeout(undoTimer);
     undoTimer = setTimeout(function () {
       undoTimer = null;
-      lastDeleted = null;
+      pendingDeletes = [];
       hideUndoToast();
     }, UNDO_MS);
   }
 
   function hideUndoToast() {
     const toast = document.getElementById('toast');
+    const hadFocus = toast.contains(document.activeElement);
+
     toast.hidden = true;
     toast.textContent = '';
+
+    // 포커스를 쥔 채 사라지면 포커스가 body 로 떨어진다.
+    if (hadFocus) {
+      const firstCheck = document.querySelector('#todo-list .row-check');
+      const addInput = document.getElementById('add-input');
+      if (firstCheck) firstCheck.focus();
+      else if (addInput) addInput.focus();
+    }
   }
 
   /* ===================== [5] EVENTS ===================== */
@@ -941,9 +977,11 @@ h1 {
   // 도착할 대상이 없어져 click/change 가 발생하지 않고, 사용자는 같은 곳을
   // 두 번 눌러야 한다. 한 행만 갈아끼우면 진행 중이던 클릭이 그대로 끝난다.
   function refreshRow(id, focusTitle) {
-    const row = document.querySelector('#todo-list .row[data-id="' + String(id).replace(/"/g, '\\"') + '"]');
     const item = todos.find(function (t) { return t.id === id; });
-    if (!row || !item) { render(); return; }
+    if (!item) return; // 그 사이 사라진 항목이면 할 일이 없다
+
+    const row = document.querySelector('#todo-list .row[data-id="' + String(id).replace(/"/g, '\\"') + '"]');
+    if (!row) { render(); return; }
 
     const fresh = renderRow(item);
     row.replaceWith(fresh);
@@ -955,7 +993,11 @@ h1 {
 
   // save=false 면 입력을 버린다. 제목 수정은 진행률을 바꾸지 않으므로
   // 진행률 영역은 다시 그리지 않는다.
-  function endEdit(save, focusTitle) {
+  // defer=true 면 행 교체를 한 틱 미룬다. focusout 으로 편집이 끝나는 경우,
+  // 지금 당장 행을 갈아끼우면 사용자가 누르고 있던 같은 행의 컨트롤이
+  // mouseup 전에 사라져 click/change 가 아예 발생하지 않는다. 그 행의
+  // 체크박스·삭제·배지가 첫 클릭에 통째로 먹통이 된다.
+  function endEdit(save, focusTitle, defer) {
     if (editingId === null) return;
     const id = editingId;
     const value = editingValue;
@@ -979,14 +1021,20 @@ h1 {
         }
       }
     }
+
+    if (defer) {
+      setTimeout(function () { refreshRow(id, false); }, 0);
+      return;
+    }
     refreshRow(id, focusTitle);
   }
 
   function undoDelete() {
     if (undoTimer !== null) { clearTimeout(undoTimer); undoTimer = null; }
-    if (lastDeleted !== null) {
-      const restored = restoreTodo(todos, lastDeleted.todo, lastDeleted.index);
-      lastDeleted = null;
+
+    if (pendingDeletes.length > 0) {
+      const restored = restoreMany(todos, pendingDeletes);
+      pendingDeletes = [];
       hideUndoToast();
       commit(restored);
       return;
@@ -1048,7 +1096,7 @@ h1 {
           const result = removeTodo(todos, id);
           if (result.removed === null) return;
           if (editingId === id) { editingId = null; editingValue = ''; editingCaret = null; }
-          lastDeleted = { todo: result.removed, index: result.index };
+          pendingDeletes.push({ todo: result.removed, index: result.index });
           commit(result.list);
           showUndoToast();
           break;
@@ -1068,17 +1116,19 @@ h1 {
       if (!event.target.classList.contains('row-edit')) return;
       if (event.key === 'Enter') {
         event.preventDefault();
-        endEdit(true, true);   // 키보드 흐름이 끊기지 않게 제목 버튼으로 포커스를 돌려준다
+        endEdit(true, true, false);   // 키보드 흐름이 끊기지 않게 제목 버튼으로 포커스를 돌려준다
       } else if (event.key === 'Escape') {
         event.preventDefault();
-        endEdit(false, true);
+        endEdit(false, true, false);
       }
     });
 
     list.addEventListener('focusout', function (event) {
       if (rendering) return; // 재그리기로 사라진 입력은 "포커스 이탈"이 아니다
       if (!event.target.classList.contains('row-edit')) return;
-      endEdit(true, false);  // 포커스는 사용자가 옮긴 곳에 그대로 둔다
+      // 포커스는 사용자가 옮긴 곳에 두고, 행 교체는 진행 중인 클릭이
+      // 끝난 뒤로 미룬다.
+      endEdit(true, false, true);
     });
 
     /* --- 필터 (FR-6) --- */
@@ -1119,8 +1169,9 @@ h1 {
 
   /* ===================== [6] INIT ===================== */
 
-  function init() {
-    const state = loadState();
+  // 불러온 결과를 상태에 반영하고 그 결과를 사용자에게 알린다.
+  // init 과 storage 이벤트가 같은 처리를 쓰도록 한곳에 모았다.
+  function applyLoadedState(state) {
     todos = state.todos;
     storageMode = state.mode;
 
@@ -1129,13 +1180,32 @@ h1 {
     } else if (state.error === 'blocked') {
       showBanner('이 창을 닫으면 데이터가 사라집니다', 'warn');
     }
+  }
+
+  function init() {
+    applyLoadedState(loadState());
 
     // 같은 앱을 두 탭에 열어두었을 때 한쪽 변경이 다른 쪽에 조용히
     // 덮어써지지 않게 한다. PRD 에 없던 대응.
     window.addEventListener('storage', function (event) {
       if (event.key !== STORAGE_KEY) return;
-      const next = loadState();
-      todos = next.todos;
+
+      // init 과 똑같이 error/mode 를 처리해야 한다. 여기서 error 를 무시하면
+      // 다른 탭이 손상 데이터를 먼저 집어갔을 때 이 탭의 목록이 아무 설명도
+      // 없이 비워지고, 앱이 갓 설치된 것처럼 보인다 (명세 11절 위반).
+      applyLoadedState(loadState());
+
+      menuForId = null;
+
+      // 수정 중이던 항목이 사라졌으면 editingId 를 반드시 풀어야 한다.
+      // 그대로 두면 포커스 복원이 세션 내내 죽는다.
+      if (editingId !== null && !todos.some(function (t) { return t.id === editingId; })) {
+        editingId = null;
+        editingValue = '';
+        editingCaret = null;
+        showBanner('수정 중이던 항목이 다른 창에서 사라져 수정을 저장하지 못했습니다', 'warn');
+      }
+
       render();
     });
 
@@ -1158,6 +1228,7 @@ h1 {
     toggleDone: toggleDone,
     removeTodo: removeTodo,
     restoreTodo: restoreTodo,
+    restoreMany: restoreMany,
     filterTodos: filterTodos,
     calcProgress: calcProgress,
     emptyMessage: emptyMessage,
@@ -1170,7 +1241,7 @@ h1 {
       return {
         todos: todos,
         filter: filter,
-        lastDeleted: lastDeleted,
+        pendingDeletes: pendingDeletes.length,
         storageMode: storageMode,
         editingId: editingId,
         menuForId: menuForId,

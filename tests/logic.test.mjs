@@ -197,6 +197,72 @@ test('restoreTodo: 맨 앞 항목도 제자리에 복원된다', async () => {
   assert.deepEqual(app.restoreTodo(r.list, r.removed, r.index), sample());
 });
 
+/* ---------------- restoreMany (되돌리기 대기 중인 삭제 전부 복원) ---------------- */
+//
+// 삭제 버튼을 누르면 다음 행이 같은 픽셀로 올라온다. 더블클릭하면 서로 다른
+// 두 항목이 지워지는데, 되돌리기 슬롯이 하나뿐이면 먼저 지워진 항목은
+// 영구히 사라진다. 대기 중인 삭제를 전부 되돌릴 수 있어야 한다.
+
+test('restoreMany: 대기 중인 삭제가 없으면 목록을 그대로 돌려준다', async () => {
+  const { app } = await loadApp();
+  assert.deepEqual(app.restoreMany(sample(), []), sample());
+});
+
+test('restoreMany: 한 건은 restoreTodo와 같은 결과를 낸다', async () => {
+  const { app } = await loadApp();
+  const r = app.removeTodo(sample(), 'b');
+  assert.deepEqual(
+    app.restoreMany(r.list, [{ todo: r.removed, index: r.index }]),
+    sample()
+  );
+});
+
+test('restoreMany: 같은 자리를 연속으로 두 번 지워도 둘 다 제자리로 돌아온다', async () => {
+  const { app } = await loadApp();
+  // 더블클릭 상황: b를 지우면 c가 같은 자리로 올라오고, 두 번째 클릭이 c를 지운다.
+  const first = app.removeTodo(sample(), 'b');
+  const second = app.removeTodo(first.list, 'c');
+  const pending = [
+    { todo: first.removed, index: first.index },
+    { todo: second.removed, index: second.index },
+  ];
+
+  assert.equal(second.list.length, 2);
+  assert.deepEqual(app.restoreMany(second.list, pending), sample());
+});
+
+test('restoreMany: 서로 떨어진 위치의 삭제도 모두 제자리로 돌아온다', async () => {
+  const { app } = await loadApp();
+  const first = app.removeTodo(sample(), 'a');
+  const second = app.removeTodo(first.list, 'd');
+  const pending = [
+    { todo: first.removed, index: first.index },
+    { todo: second.removed, index: second.index },
+  ];
+  assert.deepEqual(app.restoreMany(second.list, pending), sample());
+});
+
+test('restoreMany: 세 건 연속 삭제도 전부 복원된다', async () => {
+  const { app } = await loadApp();
+  let list = sample();
+  const pending = [];
+  for (const id of ['b', 'c', 'd']) {
+    const r = app.removeTodo(list, id);
+    pending.push({ todo: r.removed, index: r.index });
+    list = r.list;
+  }
+  assert.equal(list.length, 1);
+  assert.deepEqual(app.restoreMany(list, pending), sample());
+});
+
+test('restoreMany: 원본 배열을 변경하지 않는다', async () => {
+  const { app } = await loadApp();
+  const r = app.removeTodo(sample(), 'b');
+  const before = r.list.slice();
+  app.restoreMany(r.list, [{ todo: r.removed, index: r.index }]);
+  assert.deepEqual(r.list, before);
+});
+
 /* ---------------- filterTodos ---------------- */
 
 test('filterTodos: 상태 축으로 거른다', async () => {
