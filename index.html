@@ -212,14 +212,68 @@ h1 {
   font-size: 14px;
 }
 
+/* 할 일 행 */
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: var(--sp-2);
+}
+.row-check {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin: 3px 0 0;
+  cursor: pointer;
+}
+.row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: text;
+  /* 긴 제목은 2줄까지. 공백 없는 긴 문자열(URL 등)도 가로로 넘치지 않게 끊는다. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.row--done .row-title { text-decoration: line-through; color: var(--text-faint); }
+.row-remove {
+  flex: 0 0 auto;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-size: 15px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.row-remove:hover { color: var(--danger); }
+
+.empty[hidden] { display: none; }
+
 /* 카테고리 배지 — 색만으로 구분하지 않고 항상 글자를 함께 보여준다 */
 .badge {
   flex: 0 0 auto;
   padding: 1px var(--sp-2);
   border-radius: 99px;
+  font-family: inherit;
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.5;
   border: 1px solid transparent;
+  cursor: pointer;
 }
 .badge[data-category="업무"] { color: var(--cat-work);     background: var(--cat-work-bg); }
 .badge[data-category="개인"] { color: var(--cat-personal); background: var(--cat-personal-bg); }
@@ -524,7 +578,115 @@ h1 {
   }
 
   /* ===================== [4] RENDER ===================== */
-  /* 3단계에서 채운다. */
+  /* 상태를 읽어 화면 전부를 다시 그린다. 20개 규모에서 부분 갱신은 과설계다. */
+
+  // 순수 함수. 필터 조합에 맞는 안내 문구를 만든다.
+  function emptyMessage(current) {
+    const statusText = current.status === 'active' ? '진행중인'
+      : current.status === 'done' ? '완료한'
+      : '';
+    const categoryText = current.category === 'all' ? '' : current.category;
+
+    if (statusText === '' && categoryText === '') return '첫 할 일을 추가해보세요';
+
+    const parts = [];
+    if (statusText !== '') parts.push(statusText);
+    if (categoryText !== '') parts.push(categoryText);
+    return parts.join(' ') + ' 할 일이 없습니다';
+  }
+
+  function renderProgress(list) {
+    // PRD D-3: 진행률은 필터와 무관하게 항상 전체 데이터 기준이다.
+    // filterTodos 를 거친 배열을 여기로 넘기면 안 된다.
+    const total = calcProgress(list);
+    document.getElementById('bar-total').style.width = total.percent + '%';
+    document.getElementById('value-total').textContent =
+      total.done + '/' + total.total + ' ' + total.percent + '%';
+
+    const rows = document.querySelectorAll('#progress-cats .progress-row');
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const part = calcProgress(list, row.getAttribute('data-category'));
+      row.querySelector('.bar-fill').style.width = part.percent + '%';
+      row.querySelector('.progress-value').textContent = part.done + '/' + part.total;
+    }
+  }
+
+  function renderRow(item) {
+    const li = document.createElement('li');
+    li.className = 'row' + (item.done ? ' row--done' : '');
+    li.setAttribute('data-id', item.id);
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'row-check';
+    checkbox.checked = item.done;
+    checkbox.setAttribute('aria-label', item.title + ' 완료');
+
+    // button 으로 두어야 키보드로도 수정에 닿는다.
+    const title = document.createElement('button');
+    title.type = 'button';
+    title.className = 'row-title';
+    title.setAttribute('data-action', 'edit');
+    title.textContent = item.title; // 사용자 입력은 textContent 로만 넣는다
+
+    const badge = document.createElement('button');
+    badge.type = 'button';
+    badge.className = 'badge';
+    badge.setAttribute('data-category', item.category);
+    badge.setAttribute('data-action', 'category');
+    badge.textContent = item.category;
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'row-remove';
+    remove.setAttribute('data-action', 'remove');
+    remove.setAttribute('aria-label', item.title + ' 삭제');
+    remove.textContent = '✕';
+
+    li.appendChild(checkbox);
+    li.appendChild(title);
+    li.appendChild(badge);
+    li.appendChild(remove);
+    return li;
+  }
+
+  function renderList(list, current) {
+    const host = document.getElementById('todo-list');
+    const empty = document.getElementById('empty');
+    const visible = filterTodos(list, current);
+
+    host.textContent = '';
+
+    if (visible.length === 0) {
+      empty.textContent = emptyMessage(current);
+      empty.hidden = false;
+      return;
+    }
+    empty.hidden = true;
+
+    const fragment = document.createDocumentFragment();
+    for (let i = 0; i < visible.length; i++) {
+      fragment.appendChild(renderRow(visible[i]));
+    }
+    host.appendChild(fragment);
+  }
+
+  function renderFilters(current) {
+    const buttons = document.querySelectorAll('#filter-status .filter-btn');
+    for (let i = 0; i < buttons.length; i++) {
+      const pressed = buttons[i].getAttribute('data-status') === current.status;
+      buttons[i].setAttribute('aria-pressed', pressed ? 'true' : 'false');
+    }
+    const select = document.getElementById('filter-category');
+    if (select.value !== current.category) select.value = current.category;
+  }
+
+  function render() {
+    renderProgress(todos);
+    renderList(todos, filter);
+    renderFilters(filter);
+  }
 
   function showBanner(message, kind) {
     const host = document.getElementById('banners');
@@ -557,8 +719,10 @@ h1 {
       if (event.key !== STORAGE_KEY) return;
       const next = loadState();
       todos = next.todos;
-      // 3단계부터 여기서 render() 를 부른다.
+      render();
     });
+
+    render();
   }
 
   window.__app = {
@@ -578,6 +742,11 @@ h1 {
     restoreTodo: restoreTodo,
     filterTodos: filterTodos,
     calcProgress: calcProgress,
+    emptyMessage: emptyMessage,
+    render: render,
+    renderProgress: renderProgress,
+    renderList: renderList,
+    renderFilters: renderFilters,
     state: function () { return { todos: todos, filter: filter, lastDeleted: lastDeleted, storageMode: storageMode }; }
   };
 
